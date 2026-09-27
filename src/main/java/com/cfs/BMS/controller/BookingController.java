@@ -2,6 +2,7 @@ package com.cfs.BMS.controller;
 
 
 import com.cfs.BMS.dto.BookingRequest;
+import com.cfs.BMS.dto.GateVerifyResponse;
 import com.cfs.BMS.entity.Booking;
 import com.cfs.BMS.entity.Seat;
 import com.cfs.BMS.service.BookingService;
@@ -54,6 +55,20 @@ public class BookingController {
     public ResponseEntity<List<Seat>> getAvailableSeats(@PathVariable Long showId)
     {
         return ResponseEntity.ok(bookingService.getAvailableSeats(showId));
+    }
+
+    @GetMapping("/{id}/verify")
+    @Operation(summary = "Verify a ticket at the gate", description = "Read-only check whether a ticket is valid, cancelled or already used, without checking it in")
+    public ResponseEntity<GateVerifyResponse> verify(@PathVariable Long id)
+    {
+        return ResponseEntity.ok(bookingService.verify(id));
+    }
+
+    @PostMapping("/{id}/check-in")
+    @Operation(summary = "Check a ticket in at the gate", description = "Admits the guest once and marks the ticket used; a second scan is rejected")
+    public ResponseEntity<GateVerifyResponse> checkIn(@PathVariable Long id)
+    {
+        return ResponseEntity.ok(bookingService.checkIn(id));
     }
 
 

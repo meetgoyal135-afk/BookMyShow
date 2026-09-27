@@ -3,6 +3,7 @@ package com.cfs.BMS.controller;
 
 import com.cfs.BMS.entity.Movie;
 import com.cfs.BMS.service.MovieService;
+import com.cfs.BMS.service.TmdbService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -10,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/movies")
@@ -18,6 +20,7 @@ import java.util.List;
 public class MovieController {
 
     private final MovieService movieService;
+    private final TmdbService tmdbService;
 
 
     @GetMapping
@@ -25,6 +28,21 @@ public class MovieController {
     public ResponseEntity<List<Movie>> getAllMovies()
     {
         return ResponseEntity.ok(movieService.getAllMovies());
+    }
+
+    @PostMapping("/sync-tmdb")
+    @Operation(summary = "Sync movies from TMDB", description = "Imports/updates real movies from The Movie Database. Requires TMDB_API_KEY to be configured.")
+    public ResponseEntity<Map<String, Object>> syncTmdb()
+    {
+        if (!tmdbService.isConfigured()) {
+            return ResponseEntity.ok(Map.of(
+                    "synced", 0,
+                    "configured", false,
+                    "message", "TMDB_API_KEY is not set. Set it and restart to import real movies."));
+        }
+        int n = tmdbService.syncMovies();
+        return ResponseEntity.ok(Map.of("synced", n, "configured", true,
+                "message", "Imported/updated " + n + " movies from TMDB."));
     }
 
     @GetMapping("/{id}")
