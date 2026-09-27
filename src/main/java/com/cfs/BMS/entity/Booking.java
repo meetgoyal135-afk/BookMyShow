@@ -43,6 +43,11 @@ public class Booking {
 
     private LocalDateTime bookedAt;
 
+    @Column(nullable = false)
+    private boolean checkedIn;
+
+    private LocalDateTime checkedInAt;
+
     @PrePersist
     private void onCreate()
     {

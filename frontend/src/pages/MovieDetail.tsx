@@ -1,125 +1,134 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { MovieAPI } from '../services/api';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { MovieAPI, ShowAPI } from '../services/api';
+import type { Movie, Show } from '../services/api';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
-import { Calendar, Clock, Play, Star, ChevronLeft, Send, ThumbsUp, Share2 } from 'lucide-react';
+import { Calendar, Clock, Star, ChevronLeft, MapPin, Ticket } from 'lucide-react';
+
+const formatTime = (t: string) => {
+  // t is "HH:mm:ss"
+  const [hStr, m] = t.split(':');
+  let h = parseInt(hStr, 10);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${m} ${ampm}`;
+};
+
+const formatDate = (d: string) => {
+  const date = new Date(d + 'T00:00:00');
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.round((date.getTime() - today.getTime()) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+};
+
+interface TheaterGroup {
+  theaterName: string;
+  address: string;
+  shows: Show[];
+}
 
 const MovieDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const [movie, setMovie] = useState<any>(null);
+  const navigate = useNavigate();
+  const [movie, setMovie] = useState<Movie | null>(null);
+  const [shows, setShows] = useState<Show[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     window.scrollTo(0, 0);
-    const fetchMovie = async () => {
+    const load = async () => {
+      setLoading(true);
       try {
-        const data = await MovieAPI.getById(Number(id));
-        setMovie(data);
+        const [m, s] = await Promise.all([
+          MovieAPI.getById(Number(id)),
+          ShowAPI.getByMovie(Number(id)),
+        ]);
+        setMovie(m);
+        setShows(s);
       } catch (error) {
-        console.error('Error fetching movie:', error);
-        // Mock fallback
-        setMovie({
-          id: id,
-          title: 'Pushpa 2: The Rule',
-          description: "Pushpa Raj, who is now the ruler of the red sandalwood syndicate, must face his sworn enemy, SP Bhanwar Singh Shekhawat, in an epic showdown that will determine the fate of his empire and his legacy.",
-          genre: 'Action/Thriller',
-          rating: 9.6,
-          durationMinutes: 175,
-          language: 'Telugu',
-          releaseDate: '2024-12-05',
-          posterUrl: 'https://images.unsplash.com/photo-1542204112-3004351658b1?q=80&w=2670&auto=format&fit=crop'
-        });
+        console.error('Error loading movie detail:', error);
       } finally {
         setLoading(false);
       }
     };
-    fetchMovie();
+    load();
   }, [id]);
 
-  if (loading || !movie) return (
-    <div style={{ background: 'var(--bg-dark)', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ width: '40px', height: '40px', border: '4px solid var(--primary-muted)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
-    </div>
-  );
+  if (loading || !movie)
+    return (
+      <div style={{ background: 'var(--bg-dark)', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: '40px', height: '40px', border: '4px solid var(--primary-muted)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+      </div>
+    );
 
-  const cast = [
-    { name: 'Allu Arjun', role: 'Pushpa Raj', img: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=2574&auto=format&fit=crop' },
-    { name: 'Rashmika Mandanna', role: 'Srivalli', img: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=2574&auto=format&fit=crop' },
-    { name: 'Fahadh Faasil', role: 'Bhanwar Singh', img: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=2574&auto=format&fit=crop' },
-    { name: 'Dhanunjay', role: 'Jolly Reddy', img: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=2570&auto=format&fit=crop' },
-  ];
+  // group shows by date -> theater
+  const dates = Array.from(new Set(shows.map((s) => s.showDate))).sort();
+
+  const groupByTheater = (dayShows: Show[]): TheaterGroup[] => {
+    const map = new Map<string, TheaterGroup>();
+    for (const s of dayShows) {
+      const key = s.screen.theater.name;
+      if (!map.has(key)) {
+        map.set(key, { theaterName: key, address: s.screen.theater.address, shows: [] });
+      }
+      map.get(key)!.shows.push(s);
+    }
+    return Array.from(map.values());
+  };
 
   return (
     <main>
       <Navbar />
-      
-      {/* Dynamic Hero Section */}
-      <div style={{ position: 'relative', width: '100%', minHeight: '80vh', display: 'flex', alignItems: 'flex-end', paddingTop: '100px' }}>
-        <div style={{
-          position: 'absolute',
-          inset: 0,
-          backgroundImage: `linear-gradient(to top, var(--bg-dark) 0%, rgba(2, 6, 23, 0.6) 50%, rgba(2, 6, 23, 0.4) 100%), url(${movie.posterUrl})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center 20%',
-          filter: 'blur(0px)',
-          zIndex: -1
-        }}></div>
+
+      {/* Hero */}
+      <div style={{ position: 'relative', width: '100%', minHeight: '70vh', display: 'flex', alignItems: 'flex-end', paddingTop: '100px' }}>
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            backgroundImage: `linear-gradient(to top, var(--bg-dark) 0%, rgba(2, 6, 23, 0.6) 50%, rgba(2, 6, 23, 0.4) 100%), url(${movie.posterUrl})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center 20%',
+            zIndex: -1,
+          }}
+        ></div>
 
         <div className="container" style={{ paddingBottom: '4rem' }}>
           <Link to="/" style={{ color: 'white', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', marginBottom: '2rem', opacity: 0.8, fontWeight: 500 }} className="hover-push">
             <ChevronLeft size={20} /> Back to Movies
           </Link>
-          
+
           <div style={{ display: 'flex', gap: '3.5rem', alignItems: 'flex-end' }} className="movie-header">
             <div style={{ position: 'relative', flexShrink: 0 }}>
-              <img 
-                src={movie.posterUrl} 
-                alt={movie.title} 
-                className="animate-fade"
-                style={{ 
-                  width: '300px', 
-                  borderRadius: '20px', 
-                  boxShadow: 'var(--shadow-premium)', 
-                  border: '1px solid var(--glass-border)',
-                  aspectRatio: '2/3',
-                  objectFit: 'cover'
-                }} 
-              />
-              <div style={{ 
-                position: 'absolute', 
-                bottom: '15px', 
-                right: '15px', 
-                background: 'var(--primary)', 
-                color: 'white', 
-                padding: '4px 12px', 
-                borderRadius: '8px',
-                fontSize: '0.8rem',
-                fontWeight: 800
-              }}>
-                ULTRA HD
-              </div>
+              <img src={movie.posterUrl} alt={movie.title} className="animate-fade"
+                style={{ width: '280px', borderRadius: '20px', boxShadow: 'var(--shadow-premium)', border: '1px solid var(--glass-border)', aspectRatio: '2/3', objectFit: 'cover' }} />
             </div>
 
             <div style={{ paddingBottom: '1rem', flex: 1 }} className="animate-fade">
-              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-                {movie.genre.split('/').map((g: string) => (
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                {movie.genre.split('/').map((g) => (
                   <span key={g} style={{ border: '1px solid var(--primary)', color: 'var(--primary)', padding: '2px 10px', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 600 }}>{g}</span>
                 ))}
               </div>
-              <h1 style={{ fontSize: '4.5rem', lineHeight: 1, marginBottom: '1.5rem', letterSpacing: '-2px' }}>{movie.title}</h1>
-              
+              <h1 style={{ fontSize: '4rem', lineHeight: 1, marginBottom: '1.5rem', letterSpacing: '-2px' }}>{movie.title}</h1>
+
               <div style={{ display: 'flex', gap: '2rem', alignItems: 'center', flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                   <div style={{ background: 'var(--accent)', color: 'var(--bg-dark)', padding: '4px 8px', borderRadius: '6px', fontWeight: 800, fontSize: '1.1rem' }}>
                     <Star size={14} fill="currentColor" style={{ verticalAlign: 'middle', marginRight: '4px' }} />
                     {movie.rating}
                   </div>
-                  <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>(12.4K Reviews)</span>
                 </div>
-                
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem' }}><Clock size={20} className="text-primary" /> {Math.floor(movie.durationMinutes / 60)}h {movie.durationMinutes % 60}m</span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem' }}><Calendar size={20} className="text-primary" /> {new Date(movie.releaseDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem' }}>
+                  <Clock size={20} className="text-primary" /> {Math.floor(movie.durationMinutes / 60)}h {movie.durationMinutes % 60}m
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem' }}>
+                  <Calendar size={20} className="text-primary" /> {new Date(movie.releaseDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
                 <span style={{ fontSize: '1.1rem', background: 'var(--glass)', padding: '4px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>{movie.language}</span>
               </div>
             </div>
@@ -127,91 +136,85 @@ const MovieDetail: React.FC = () => {
         </div>
       </div>
 
-      <div className="container" style={{ display: 'grid', gridTemplateColumns: '1.8fr 1fr', gap: '5rem', padding: '6rem 0' }}>
-        <div className="animate-fade">
-          <section style={{ marginBottom: '4rem' }}>
-            <h2 style={{ fontSize: '2.25rem', marginBottom: '1.5rem', letterSpacing: '-1px' }}>Synopsis</h2>
-            <p style={{ fontSize: '1.2rem', color: 'var(--text-muted)', lineHeight: 1.8 }}>
-              {movie.description}
-            </p>
-          </section>
+      <div className="container" style={{ padding: '4rem 0 6rem' }}>
+        {/* Synopsis */}
+        <section style={{ marginBottom: '4rem', maxWidth: '820px' }}>
+          <h2 style={{ fontSize: '2rem', marginBottom: '1.25rem', letterSpacing: '-1px' }}>Synopsis</h2>
+          <p style={{ fontSize: '1.15rem', color: 'var(--text-muted)', lineHeight: 1.8 }}>{movie.description}</p>
+        </section>
 
-          <section>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-              <h2 style={{ fontSize: '2.25rem', letterSpacing: '-1px' }}>Cast & Crew</h2>
-              <button style={{ color: 'var(--primary)', background: 'none', fontWeight: 600 }}>View All</button>
+        {/* Showtimes */}
+        <section>
+          <h2 style={{ fontSize: '2rem', marginBottom: '2rem', letterSpacing: '-1px', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <Ticket className="text-primary" /> Book Tickets
+          </h2>
+
+          {shows.length === 0 ? (
+            <div className="glass-effect" style={{ padding: '2.5rem', borderRadius: '20px', color: 'var(--text-muted)', textAlign: 'center' }}>
+              No showtimes are currently scheduled for this movie.
             </div>
-            
-            <div style={{ display: 'flex', gap: '2.5rem', overflowX: 'auto', paddingBottom: '1.5rem' }}>
-              {cast.map((person, i) => (
-                <div key={i} style={{ textAlign: 'center', minWidth: '120px' }}>
-                  <div style={{ 
-                    width: '120px', 
-                    height: '120px', 
-                    borderRadius: '24px', 
-                    overflow: 'hidden', 
-                    marginBottom: '1rem',
-                    border: '1px solid var(--glass-border)'
-                   }}>
-                    <img src={person.img} alt={person.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  </div>
-                  <div style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: '0.25rem' }}>{person.name}</div>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{person.role}</div>
+          ) : (
+            dates.map((date) => (
+              <div key={date} style={{ marginBottom: '2.5rem' }}>
+                <h3 style={{ fontSize: '1.15rem', color: 'var(--accent)', marginBottom: '1.25rem', fontWeight: 700, letterSpacing: '0.5px' }}>
+                  {formatDate(date)}
+                </h3>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {groupByTheater(shows.filter((s) => s.showDate === date)).map((group) => (
+                    <div key={group.theaterName} className="glass-effect" style={{ padding: '1.5rem 2rem', borderRadius: '18px', border: '1px solid var(--glass-border)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1rem' }}>
+                        <MapPin size={18} className="text-primary" />
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>{group.theaterName}</div>
+                          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{group.address}</div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+                        {group.shows
+                          .sort((a, b) => a.startTime.localeCompare(b.startTime))
+                          .map((show) => (
+                            <button
+                              key={show.id}
+                              onClick={() => navigate(`/book/${show.id}`)}
+                              className="hover-scale"
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                gap: '2px',
+                                padding: '0.6rem 1.1rem',
+                                borderRadius: '12px',
+                                border: '1px solid var(--primary)',
+                                background: 'transparent',
+                                color: 'white',
+                                cursor: 'pointer',
+                                transition: 'var(--transition)',
+                                minWidth: '96px',
+                              }}
+                            >
+                              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{formatTime(show.startTime)}</span>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>₹{show.ticketPrice} · {show.screen.name}</span>
+                            </button>
+                          ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </section>
-        </div>
-
-        <div>
-          <div className="glass-effect" style={{ 
-            padding: '2.5rem', 
-            borderRadius: '32px', 
-            height: 'fit-content', 
-            position: 'sticky', 
-            top: '120px',
-            boxShadow: 'var(--shadow-premium)'
-          }}>
-            <h3 style={{ fontSize: '1.75rem', marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              Book Tickets
-            </h3>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              <Link to={`/book/${id}`} className="btn-primary" style={{ width: '100%', padding: '1.25rem', fontSize: '1.2rem', textAlign: 'center', textDecoration: 'none', borderRadius: '16px' }}>
-                Select Showtimes
-              </Link>
-              <button className="btn-glass" style={{ width: '100%', padding: '1.25rem', borderRadius: '16px', fontSize: '1.1rem' }}>
-                Watch Trailer <Play size={18} fill="currentColor" />
-              </button>
-            </div>
-
-            <div style={{ marginTop: '2.5rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-              <button className="btn-glass" style={{ padding: '0.75rem', fontSize: '0.9rem', width: '100%' }}>
-                <ThumbsUp size={16} /> 24K
-              </button>
-              <button className="btn-glass" style={{ padding: '0.75rem', fontSize: '0.9rem', width: '100%' }}>
-                <Share2 size={16} /> Share
-              </button>
-            </div>
-            
-            <p style={{ marginTop: '2rem', fontSize: '0.9rem', color: 'var(--text-muted)', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-               <Zap size={14} className="text-primary" /> Available at 12 theaters
-            </p>
-          </div>
-        </div>
+              </div>
+            ))
+          )}
+        </section>
       </div>
 
       <Footer />
-      
+
       <style>{`
-        .movie-header {
-          @media (max-width: 968px) {
-            flex-direction: column;
-            align-items: flex-start;
-          }
-        }
+        .movie-header { @media (max-width: 968px) { flex-direction: column; align-items: flex-start; } }
         .text-primary { color: var(--primary); }
         .hover-push:hover { transform: translateX(-5px); }
+        .hover-scale:hover { background: var(--primary) !important; transform: translateY(-2px); }
       `}</style>
     </main>
   );
